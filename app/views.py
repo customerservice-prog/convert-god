@@ -3,6 +3,9 @@ import os
 import time
 import uuid
 from pathlib import Path
+from urllib.parse import urlparse
+import urllib.request
+import urllib.parse
 
 from django.conf import settings
 from django.http import JsonResponse, FileResponse
@@ -12,6 +15,36 @@ from django.views.decorators.csrf import csrf_exempt
 
 from .models import Job
 from .disk_storage import ensure_dirs, input_path, output_path, sign_download, verify_download
+
+
+def _is_youtube_url(u: str) -> bool:
+    try:
+        p = urlparse(u)
+        host = (p.netloc or "").lower()
+        if host.startswith("www."):
+            host = host[4:]
+        return host in ("youtube.com", "m.youtube.com", "youtu.be") or host.endswith(".youtube.com")
+    except Exception:
+        return False
+
+
+def _is_http_url(u: str) -> bool:
+    try:
+        p = urlparse(u)
+        return p.scheme in ("http", "https") and bool(p.netloc)
+    except Exception:
+        return False
+
+
+def _safe_ext_from_url(u: str) -> str:
+    try:
+        path = urlparse(u).path or ""
+        ext = os.path.splitext(path)[1].lower()
+        if ext and len(ext) <= 8:
+            return ext
+    except Exception:
+        pass
+    return ""
 
 
 def healthz(request):
@@ -79,6 +112,106 @@ def upload_file(request):
             out.write(chunk)
 
     return JsonResponse({"ok": True, "key": key, "size": int(f.size or 0)})
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def input_from_url(request):
+    """Fetch an input file from a direct URL (must be a file you control)."""
+    ensure_dirs()
+
+    try:
+        body = json.loads(request.body.decode("utf-8") or "{}")
+    except json.JSONDecodeError:
+        body = {}
+
+    url = (body.get("url") or "").strip()
+    if not url or not _is_http_url(url):
+        return JsonResponse({"ok": False, "error": "Invalid URL"}, status=400)
+
+    if _is_youtube_url(url):
+        return JsonResponse(
+            {
+                "ok": False,
+                "error": "YouTube links are preview-only. Please provide a direct file URL (e.g., signed S3/R2/Dropbox direct link) or upload the source file.",
+            },
+            status=400,
+        )
+
+    # Download with a hard cap (1GB default)
+    cap = _max_upload_bytes()
+    ext = _safe_ext_from_url(url)
+    key = f"inputs/{uuid.uuid4().hex}{ext}"
+    dst = input_path(key)
+    Path(os.path.dirname(dst)).mkdir(parents=True, exist_ok=True)
+
+    req = urllib.request.Request(url, headers={"User-Agent": "ConvertGod/1.0"})
+
+    size = 0
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            # Optional early reject if content-length is present
+            cl = resp.headers.get("Content-Length")
+            if cl:
+                try:
+                    if int(cl) > cap:
+                        return JsonResponse({"ok": False, "error": "File too large"}, status=413)
+                except Exception:
+                    pass
+
+            with open(dst, "wb") as out:
+                while True:
+                    chunk = resp.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    size += len(chunk)
+                    if size > cap:
+                        try:
+                            out.close()
+                        finally:
+                            try:
+                                os.remove(dst)
+                            except Exception:
+                                pass
+                        return JsonResponse({"ok": False, "error": "File too large"}, status=413)
+                    out.write(chunk)
+    except Exception:
+        try:
+            if os.path.exists(dst):
+                os.remove(dst)
+        except Exception:
+            pass
+        return JsonResponse({"ok": False, "error": "Failed to fetch URL"}, status=400)
+
+    return JsonResponse({"ok": True, "key": key, "size": int(size)})
+
+
+@require_http_methods(["GET"])
+def youtube_preview(request):
+    """Preview only (safe): fetch title+thumbnail using YouTube oEmbed."""
+    url = (request.GET.get("url") or "").strip()
+    if not url or not _is_http_url(url) or not _is_youtube_url(url):
+        return JsonResponse({"ok": False, "error": "Invalid YouTube URL"}, status=400)
+
+    # YouTube oEmbed endpoint (no API key required)
+    oembed = "https://www.youtube.com/oembed?format=json&url=" + urllib.parse.quote(url, safe="")
+    try:
+        with urllib.request.urlopen(oembed, timeout=15) as resp:
+            data = json.loads(resp.read().decode("utf-8") or "{}")
+    except Exception:
+        return JsonResponse({"ok": False, "error": "Preview failed"}, status=400)
+
+    return JsonResponse(
+        {
+            "ok": True,
+            "preview": {
+                "title": data.get("title") or "",
+                "thumbnail_url": data.get("thumbnail_url") or "",
+                "author_name": data.get("author_name") or "",
+                "provider_name": data.get("provider_name") or "YouTube",
+            },
+        }
+    )
 
 
 @csrf_exempt

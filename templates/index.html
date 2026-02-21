@@ -16,7 +16,11 @@
 
   <div class="card">
     <div class="row" style="display:flex;gap:12px;flex-wrap:wrap;align-items:center">
-      <input id="file" type="file" style="flex: 1 1 420px; width:100%" />
+      <div style="display:flex; flex-direction:column; gap:10px; width:100%">
+        <input id="url" type="text" placeholder="Paste a direct file URL (or YouTube URL for preview)" style="height:48px;border-radius:12px;border:1px solid rgba(255,255,255,.12);background:rgba(0,0,0,.35);color:#fff;padding:0 12px;font-weight:850;" />
+        <input id="file" type="file" style="flex: 1 1 420px; width:100%" />
+        <div id="ytPreview" class="muted" style="display:none; margin-top:2px"></div>
+      </div>
     </div>
 
     <div class="row" style="display:flex;gap:12px;flex-wrap:wrap;align-items:center; margin-top:12px">
@@ -42,6 +46,7 @@
   </div>
 
 <script>
+const urlEl = document.getElementById('url');
 const fileEl = document.getElementById('file');
 const presetEl = document.getElementById('preset');
 const btn = document.getElementById('convertBtn');
@@ -49,16 +54,46 @@ const statusEl = document.getElementById('status');
 const bar = document.getElementById('bar');
 const dlWrap = document.getElementById('downloadWrap');
 const dlBtn = document.getElementById('downloadBtn');
+const ytPreview = document.getElementById('ytPreview');
 
 function setStatus(t){ statusEl.textContent = t; }
 function setProgress(p){ bar.style.width = Math.max(0, Math.min(100, p)) + '%'; }
 
+function hasAnyInput(){
+  const f = fileEl.files && fileEl.files[0];
+  const u = (urlEl.value || '').trim();
+  return !!f || !!u;
+}
+
+async function refreshYouTubePreview(){
+  const u = (urlEl.value || '').trim();
+  ytPreview.style.display = 'none';
+  ytPreview.textContent = '';
+  if (!u) return;
+  if (!/youtu\.be\//i.test(u) && !/youtube\.com\//i.test(u)) return;
+
+  try{
+    const res = await fetch('/api/youtube/preview?url=' + encodeURIComponent(u));
+    const data = await res.json();
+    if (!data.ok) return;
+    const p = data.preview;
+    ytPreview.style.display = 'block';
+    ytPreview.innerHTML = `YouTube preview: <b>${(p.title||'').replaceAll('<','&lt;')}</b>`;
+  }catch(e){}
+}
+
 fileEl.addEventListener('change', () => {
   const f = fileEl.files && fileEl.files[0];
-  btn.disabled = !f;
+  btn.disabled = !hasAnyInput();
   dlWrap.hidden = true;
   setProgress(0);
-  setStatus(f ? `Ready: ${f.name} (${Math.round(f.size/1024/1024)} MB)` : 'Select a file.');
+  setStatus(f ? `Ready: ${f.name} (${Math.round(f.size/1024/1024)} MB)` : (hasAnyInput()? 'Ready.' : 'Select a file or paste a URL.'));
+});
+
+urlEl.addEventListener('input', () => {
+  btn.disabled = !hasAnyInput();
+  dlWrap.hidden = true;
+  refreshYouTubePreview();
 });
 
 async function uploadFile(f){
@@ -67,6 +102,17 @@ async function uploadFile(f){
   const res = await fetch('/api/uploads', { method:'POST', body: fd });
   const data = await res.json();
   if (!data.ok) throw new Error(data.error || 'upload failed');
+  return data;
+}
+
+async function inputFromUrl(url){
+  const res = await fetch('/api/inputs/from-url', {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ url })
+  });
+  const data = await res.json();
+  if (!data.ok) throw new Error(data.error || 'url fetch failed');
   return data;
 }
 
@@ -88,17 +134,31 @@ async function pollJob(id){
 
 btn.addEventListener('click', async () => {
   const f = fileEl.files && fileEl.files[0];
-  if (!f) return;
+  const u = (urlEl.value || '').trim();
+  if (!f && !u) return;
+
   btn.disabled = true;
   dlWrap.hidden = true;
   setProgress(2);
 
   try{
-    setStatus('Uploading…');
-    const up = await uploadFile(f);
+    let inputKey = null;
+    let inputSize = 0;
+
+    if (u){
+      setStatus('Fetching URL…');
+      const up = await inputFromUrl(u);
+      inputKey = up.key;
+      inputSize = up.size || 0;
+    } else {
+      setStatus('Uploading…');
+      const up = await uploadFile(f);
+      inputKey = up.key;
+      inputSize = up.size || f.size;
+    }
 
     setStatus('Queued…');
-    const jobId = await createJob(up.key, up.size || f.size, presetEl.value);
+    const jobId = await createJob(inputKey, inputSize, presetEl.value);
 
     setStatus('Processing…');
     let done = false;
