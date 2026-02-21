@@ -18,8 +18,8 @@ class BasicAuthMiddleware:
         if not user or not pw:
             return self.get_response(request)
 
-        # Allow healthchecks if you add one later.
-        if request.path.startswith("/health"):
+        # Allow healthchecks
+        if request.path in ("/healthz", "/healthz/"):
             return self.get_response(request)
 
         auth = request.META.get("HTTP_AUTHORIZATION") or ""

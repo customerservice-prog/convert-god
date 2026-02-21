@@ -14,6 +14,10 @@ from .models import Job
 from .disk_storage import ensure_dirs, input_path, output_path, sign_download, verify_download
 
 
+def healthz(request):
+    return JsonResponse({"ok": True})
+
+
 def index(request):
     return render(request, "index.html", {})
 

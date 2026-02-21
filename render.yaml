@@ -3,7 +3,7 @@ services:
     name: convert-god
     runtime: docker
     plan: starter
-    healthCheckPath: /
+    healthCheckPath: /healthz
     envVars:
       - key: SERVICE_ROLE
         value: all

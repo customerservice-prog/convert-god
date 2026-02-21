@@ -5,6 +5,9 @@ from app import views
 urlpatterns = [
     path("admin/", admin.site.urls),
 
+    # Healthcheck (no auth)
+    path("healthz", views.healthz, name="healthz"),
+
     # UI
     path("", views.index, name="index"),
 
