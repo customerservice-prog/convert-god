@@ -94,4 +94,3 @@ services:
 
 databases:
   - name: convert-god-db
-    plan: starter
