@@ -5,12 +5,15 @@ FROM mcr.microsoft.com/playwright/python:v1.50.0-jammy
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
-# ffmpeg for transcoding
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ=Etc/UTC
+
+# ffmpeg for transcoding + tzdata (non-interactive)
 RUN apt-get update \
   && apt-get install -y --no-install-recommends ffmpeg ca-certificates tzdata \
+  && ln -fs /usr/share/zoneinfo/$TZ /etc/localtime \
+  && dpkg-reconfigure -f noninteractive tzdata \
   && rm -rf /var/lib/apt/lists/*
-
-ENV TZ=UTC
 
 WORKDIR /app
 
