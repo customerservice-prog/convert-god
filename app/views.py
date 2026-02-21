@@ -15,7 +15,7 @@ from django.views.decorators.csrf import csrf_exempt
 
 from .models import Job
 from .disk_storage import ensure_dirs, input_path, output_path, sign_download, verify_download
-from .extractors import extract_best_effort
+from .extractors import extract_best_effort, extract_src_from_embed
 
 
 def _is_youtube_url(u: str) -> bool:
@@ -118,7 +118,15 @@ def upload_file(request):
 @csrf_exempt
 @require_http_methods(["POST"])
 def input_from_url(request):
-    """Fetch an input file from a direct URL (must be a file you control)."""
+    """Fetch an input file from a direct URL.
+
+    Supports:
+      - direct media file URLs (preferred)
+      - best-effort webpage extraction (HTML -> find embedded mp4/m3u8)
+      - pasted embed code (iframe/video/source) by extracting its src
+
+    Not guaranteed for all sites.
+    """
     ensure_dirs()
 
     try:
@@ -126,7 +134,17 @@ def input_from_url(request):
     except json.JSONDecodeError:
         body = {}
 
-    url = (body.get("url") or "").strip()
+    raw = (body.get("url") or "").strip()
+    if not raw:
+        return JsonResponse({"ok": False, "error": "Invalid URL"}, status=400)
+
+    # Allow users to paste full embed markup.
+    url = raw
+    if "<" in raw and "src" in raw.lower():
+        src = extract_src_from_embed(raw)
+        if src:
+            url = src
+
     if not url or not _is_http_url(url):
         return JsonResponse({"ok": False, "error": "Invalid URL"}, status=400)
 

@@ -6,6 +6,35 @@ _MP4_RE = re.compile(r"https?://[^\s'\"<>]+?\.mp4(?:\?[^\s'\"<>]*)?", re.IGNOREC
 _M3U8_RE = re.compile(r"https?://[^\s'\"<>]+?\.m3u8(?:\?[^\s'\"<>]*)?", re.IGNORECASE)
 
 
+def extract_src_from_embed(markup: str) -> str | None:
+    """Extract a URL from pasted embed markup (<iframe>, <video>, etc.)."""
+    text = (markup or "").strip()
+    if not text:
+        return None
+
+    # iframe src
+    m = re.search(r"<iframe[^>]+src=['\"]([^'\"]+)['\"]", text, re.IGNORECASE)
+    if m:
+        return m.group(1).strip()
+
+    # video src
+    m = re.search(r"<video[^>]+src=['\"]([^'\"]+)['\"]", text, re.IGNORECASE)
+    if m:
+        return m.group(1).strip()
+
+    # source src
+    m = re.search(r"<source[^>]+src=['\"]([^'\"]+)['\"]", text, re.IGNORECASE)
+    if m:
+        return m.group(1).strip()
+
+    # Generic src="..."
+    m = re.search(r"\bsrc=['\"]([^'\"]+)['\"]", text, re.IGNORECASE)
+    if m:
+        return m.group(1).strip()
+
+    return None
+
+
 def extract_best_effort(html: str, base_url: str) -> dict:
     """Best-effort extraction of a direct media URL from an HTML page.
 
