@@ -9,7 +9,8 @@ urlpatterns = [
     path("", views.index, name="index"),
 
     # API
-    path("api/uploads/presign", views.presign_upload, name="presign_upload"),
+    path("api/uploads", views.upload_file, name="upload_file"),
     path("api/jobs", views.create_job, name="create_job"),
     path("api/jobs/<uuid:job_id>", views.job_status, name="job_status"),
+    path("api/jobs/<uuid:job_id>/download", views.download_output, name="download_output"),
 ]

@@ -78,14 +78,18 @@ TEMPLATES = [
 
 WSGI_APPLICATION = "convert_god.wsgi.application"
 
+# Database
+# Default: SQLite on a persistent disk for cheapest/private deployments.
+sqlite_path = env("SQLITE_PATH", "/var/data/db.sqlite3")
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.sqlite3",
-        "NAME": BASE_DIR / "db.sqlite3",
+        "NAME": sqlite_path if not DEBUG else str(BASE_DIR / "db.sqlite3"),
         "OPTIONS": {"timeout": 20},
     }
 }
 
+# Optional: Postgres if DATABASE_URL is provided
 database_url = env("DATABASE_URL")
 if database_url:
     DATABASES["default"] = dj_database_url.parse(database_url, conn_max_age=600, ssl_require=False)
@@ -104,6 +108,10 @@ USE_TZ = True
 
 STATIC_URL = "/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
+
+# File storage on disk (persistent disk mount on Render)
+MEDIA_ROOT = env("MEDIA_ROOT", "/var/data/media")
+MEDIA_URL = "/media/"
 
 STORAGES = {
     "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},

@@ -1,61 +1,64 @@
 import json
 import os
+import time
 import uuid
-from django.http import JsonResponse, HttpResponse
+from pathlib import Path
+
+from django.conf import settings
+from django.http import JsonResponse, FileResponse
 from django.shortcuts import render
 from django.views.decorators.http import require_http_methods
 from django.views.decorators.csrf import csrf_exempt
 
 from .models import Job
-from .storage import s3_client, bucket_name, signed_url_expires, max_upload_bytes
+from .disk_storage import ensure_dirs, input_path, output_path, sign_download, verify_download
 
 
 def index(request):
     return render(request, "index.html", {})
 
 
+def _max_upload_bytes() -> int:
+    try:
+        return int(os.environ.get("MAX_UPLOAD_BYTES", str(1024**3)))
+    except Exception:
+        return 1024**3
+
+
+def _signed_url_expires() -> int:
+    try:
+        return int(os.environ.get("SIGNED_URL_EXPIRES", "3600"))
+    except Exception:
+        return 3600
+
+
 @csrf_exempt
 @require_http_methods(["POST"])
-def presign_upload(request):
-    """Create a presigned PUT url for direct upload."""
-    b = bucket_name()
-    if not b:
-        return JsonResponse({"ok": False, "error": "S3_BUCKET not set"}, status=500)
+def upload_file(request):
+    """Upload a file directly to the server (disk-backed).
 
-    try:
-        body = json.loads(request.body.decode("utf-8") or "{}")
-    except json.JSONDecodeError:
-        body = {}
+    Private-only mode. For public scale, switch to R2/S3 presigned uploads.
+    """
+    ensure_dirs()
 
-    filename = (body.get("filename") or "upload").strip()[:180]
-    size = int(body.get("size") or 0)
-    if size <= 0:
-        return JsonResponse({"ok": False, "error": "Invalid size"}, status=400)
+    f = request.FILES.get("file")
+    if not f:
+        return JsonResponse({"ok": False, "error": "Missing file"}, status=400)
 
-    if size > max_upload_bytes():
+    if f.size and int(f.size) > _max_upload_bytes():
         return JsonResponse({"ok": False, "error": "File too large"}, status=413)
 
+    filename = (getattr(f, "name", "upload") or "upload")[:180]
     ext = os.path.splitext(filename)[1].lower()
-    if ext not in (".mp4", ".mov", ".mkv", ".webm", ".avi", ".m4v"):
-        # allow, but warn; ffmpeg may still handle it
-        pass
-
     key = f"inputs/{uuid.uuid4().hex}{ext or ''}"
+    dst = input_path(key)
 
-    c = s3_client()
-    url = c.generate_presigned_url(
-        "put_object",
-        Params={
-            "Bucket": b,
-            "Key": key,
-            "ContentType": "application/octet-stream",
-        },
-        ExpiresIn=60 * 15,
-        HttpMethod="PUT",
-    )
+    Path(os.path.dirname(dst)).mkdir(parents=True, exist_ok=True)
+    with open(dst, "wb") as out:
+        for chunk in f.chunks():
+            out.write(chunk)
 
-    # Provide a simple GET URL for later (not public if bucket is private)
-    return JsonResponse({"ok": True, "key": key, "put_url": url})
+    return JsonResponse({"ok": True, "key": key, "size": int(f.size or 0)})
 
 
 @csrf_exempt
@@ -75,6 +78,11 @@ def create_job(request):
     if not input_key.startswith("inputs/"):
         return JsonResponse({"ok": False, "error": "Invalid input_key"}, status=400)
 
+    # Validate input exists
+    p = input_path(input_key)
+    if not os.path.exists(p):
+        return JsonResponse({"ok": False, "error": "Input not found"}, status=400)
+
     j = Job.objects.create(
         status=Job.STATUS_QUEUED,
         preset=preset,
@@ -93,15 +101,9 @@ def job_status(request, job_id):
 
     download_url = None
     if j.status == Job.STATUS_DONE and j.output_key:
-        b = bucket_name()
-        if b:
-            c = s3_client()
-            download_url = c.generate_presigned_url(
-                "get_object",
-                Params={"Bucket": b, "Key": j.output_key},
-                ExpiresIn=signed_url_expires(),
-                HttpMethod="GET",
-            )
+        exp = int(time.time()) + _signed_url_expires()
+        sig = sign_download(str(j.id), j.output_key, exp)
+        download_url = f"/api/jobs/{j.id}/download?exp={exp}&sig={sig}"
 
     return JsonResponse(
         {
@@ -116,3 +118,26 @@ def job_status(request, job_id):
             }
         }
     )
+
+
+@require_http_methods(["GET"])
+def download_output(request, job_id):
+    j = Job.objects.filter(id=job_id).first()
+    if not j or j.status != Job.STATUS_DONE or not j.output_key:
+        return JsonResponse({"ok": False, "error": "Not found"}, status=404)
+
+    exp = request.GET.get("exp")
+    sig = request.GET.get("sig")
+    try:
+        exp_i = int(exp)
+    except Exception:
+        return JsonResponse({"ok": False, "error": "Invalid exp"}, status=400)
+
+    if not verify_download(str(j.id), j.output_key, exp_i, sig or ""):
+        return JsonResponse({"ok": False, "error": "Invalid signature"}, status=403)
+
+    fp = output_path(j.output_key)
+    if not os.path.exists(fp):
+        return JsonResponse({"ok": False, "error": "Missing file"}, status=404)
+
+    return FileResponse(open(fp, "rb"), as_attachment=True, filename=f"{j.id}.mp4", content_type="video/mp4")

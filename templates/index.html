@@ -72,20 +72,13 @@ fileEl.addEventListener('change', () => {
   setStatus(f ? `Ready: ${f.name} (${Math.round(f.size/1024/1024)} MB)` : 'Select a file.');
 });
 
-async function presignUpload(f){
-  const res = await fetch('/api/uploads/presign', {
-    method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({ filename: f.name, size: f.size })
-  });
+async function uploadFile(f){
+  const fd = new FormData();
+  fd.append('file', f);
+  const res = await fetch('/api/uploads', { method:'POST', body: fd });
   const data = await res.json();
-  if (!data.ok) throw new Error(data.error || 'presign failed');
+  if (!data.ok) throw new Error(data.error || 'upload failed');
   return data;
-}
-
-async function putFile(url, f){
-  const res = await fetch(url, { method:'PUT', body: f, headers: { 'Content-Type': 'application/octet-stream' } });
-  if (!res.ok) throw new Error('upload failed');
 }
 
 async function createJob(input_key, input_size_bytes, preset){
@@ -112,14 +105,11 @@ btn.addEventListener('click', async () => {
   setProgress(2);
 
   try{
-    setStatus('Requesting upload URL…');
-    const p = await presignUpload(f);
-
     setStatus('Uploading…');
-    await putFile(p.put_url, f);
+    const up = await uploadFile(f);
 
     setStatus('Queued…');
-    const jobId = await createJob(p.key, f.size, presetEl.value);
+    const jobId = await createJob(up.key, up.size || f.size, presetEl.value);
     currentJobId = jobId;
 
     setStatus('Processing…');

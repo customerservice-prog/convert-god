@@ -3,14 +3,14 @@ import time
 import json
 import shutil
 import subprocess
-import tempfile
+from pathlib import Path
 
 from django.core.management.base import BaseCommand
 from django.db import transaction
 from django.utils import timezone
 
 from app.models import Job
-from app.storage import s3_client, bucket_name
+from app.disk_storage import ensure_dirs, input_path, output_path
 
 
 def ffmpeg_bin() -> str:
@@ -67,9 +67,7 @@ class Command(BaseCommand):
     help = "Run the conversion worker (polls DB for queued jobs)."
 
     def handle(self, *args, **opts):
-        b = bucket_name()
-        if not b:
-            raise SystemExit("S3_BUCKET not set")
+        ensure_dirs()
 
         if shutil.which(ffmpeg_bin()) is None:
             self.stderr.write(self.style.ERROR(f"ffmpeg not found (FFMPEG_BIN={ffmpeg_bin()})"))
@@ -106,58 +104,50 @@ class Command(BaseCommand):
                 )
 
     def process_job(self, job: Job):
-        c = s3_client()
-        b = bucket_name()
-
         in_key = job.input_key
         out_key = f"outputs/{job.id}.mp4"
 
-        with tempfile.TemporaryDirectory() as td:
-            in_path = os.path.join(td, "input")
-            out_path = os.path.join(td, "output.mp4")
+        in_path = input_path(in_key)
+        out_path = output_path(out_key)
 
-            # Download input
-            c.download_file(b, in_key, in_path)
+        Path(os.path.dirname(out_path)).mkdir(parents=True, exist_ok=True)
 
-            # ffmpeg progress
-            cmd = [
-                ffmpeg_bin(),
-                "-y",
-                "-i",
-                in_path,
-                "-progress",
-                "pipe:1",
-                "-nostats",
-            ] + preset_args(job.preset) + [out_path]
+        # ffmpeg progress
+        cmd = [
+            ffmpeg_bin(),
+            "-y",
+            "-i",
+            in_path,
+            "-progress",
+            "pipe:1",
+            "-nostats",
+        ] + preset_args(job.preset) + [out_path]
 
-            p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
 
-            # We can't always know duration reliably for arbitrary inputs without probing.
-            # We'll approximate progress by counting 'out_time_ms' up to a cap once we see it.
-            last_pct = 0
-            while True:
-                line = p.stdout.readline() if p.stdout else ""
-                if not line:
-                    if p.poll() is not None:
-                        break
-                    continue
-
-                k, v = parse_progress_line(line)
-                if k == "progress" and v == "end":
+        # We can't always know duration reliably for arbitrary inputs without probing.
+        # We'll approximate progress by counting 'out_time_ms' up to a cap once we see it.
+        last_pct = 0
+        while True:
+            line = p.stdout.readline() if p.stdout else ""
+            if not line:
+                if p.poll() is not None:
                     break
+                continue
 
-                # Lightweight progress: bump slowly when we see activity.
-                if k == "out_time_ms":
-                    # Without duration, just bump up to 95% while running.
-                    last_pct = min(95, last_pct + 1)
-                    Job.objects.filter(id=job.id).update(progress=last_pct, updated_at=timezone.now())
+            k, v = parse_progress_line(line)
+            if k == "progress" and v == "end":
+                break
 
-            rc = p.wait()
-            if rc != 0:
-                raise RuntimeError(f"ffmpeg_failed rc={rc}")
+            # Lightweight progress: bump slowly when we see activity.
+            if k == "out_time_ms":
+                # Without duration, just bump up to 95% while running.
+                last_pct = min(95, last_pct + 1)
+                Job.objects.filter(id=job.id).update(progress=last_pct, updated_at=timezone.now())
 
-            # Upload output
-            c.upload_file(out_path, b, out_key, ExtraArgs={"ContentType": "video/mp4"})
+        rc = p.wait()
+        if rc != 0:
+            raise RuntimeError(f"ffmpeg_failed rc={rc}")
 
         Job.objects.filter(id=job.id).update(
             status=Job.STATUS_DONE,

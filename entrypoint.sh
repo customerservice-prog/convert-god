@@ -12,6 +12,11 @@ if [ "$ROLE" = "worker" ]; then
   exec python manage.py worker
 fi
 
+if [ "$ROLE" = "all" ]; then
+  # Run worker in background, then web in foreground
+  python manage.py worker &
+fi
+
 # default: web
 exec gunicorn convert_god.wsgi:application \
   --bind 0.0.0.0:${PORT:-10000} \
