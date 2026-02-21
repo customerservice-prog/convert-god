@@ -131,6 +131,20 @@ csrf_env = env("CSRF_TRUSTED_ORIGINS")
 if csrf_env:
     CSRF_TRUSTED_ORIGINS = [x.strip() for x in str(csrf_env).split(",") if x.strip()]
 
+# Logging (surface 500 tracebacks in Render logs)
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "handlers": {
+        "console": {"class": "logging.StreamHandler"},
+    },
+    "root": {"handlers": ["console"], "level": os.environ.get("LOG_LEVEL", "INFO")},
+    "loggers": {
+        "django.request": {"handlers": ["console"], "level": "ERROR", "propagate": False},
+        "app": {"handlers": ["console"], "level": os.environ.get("LOG_LEVEL", "INFO"), "propagate": False},
+    },
+}
+
 # Production hardening
 if not DEBUG:
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
