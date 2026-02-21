@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Convert God</title>
+  <style>
+    html,body{margin:0;padding:0;background:#0b0b0c;color:#fff;font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Arial;}
+    .wrap{max-width:860px;margin:0 auto;padding:36px 16px;}
+    h1{margin:0 0 18px 0;font-size:34px;letter-spacing:.02em;}
+    .card{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.10);border-radius:16px;padding:16px;}
+    .row{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+    .row > *{flex:1 1 auto;}
+    input[type=file]{width:100%;}
+    select,button{height:44px;border-radius:12px;border:1px solid rgba(255,255,255,.12);background:rgba(0,0,0,.35);color:#fff;padding:0 12px;font-weight:800;}
+    button{cursor:pointer;background:rgba(0,170,255,.18);border-color:rgba(0,170,255,.45);}
+    button[disabled]{opacity:.4;cursor:not-allowed;}
+    .bar{height:14px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden;border:1px solid rgba(255,255,255,.10)}
+    .bar > div{height:100%;width:0%;background:linear-gradient(90deg,#00aaff,#00ff99);}
+    .muted{opacity:.8;font-weight:700}
+    a.btn{display:inline-flex;align-items:center;justify-content:center;height:44px;padding:0 14px;border-radius:12px;border:1px solid rgba(255,255,255,.12);text-decoration:none;color:#fff;background:rgba(255,255,255,.08);font-weight:900}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Convert God</h1>
+
+    <div class="card">
+      <div class="row">
+        <input id="file" type="file" />
+      </div>
+      <div class="row" style="margin-top:12px">
+        <select id="preset">
+          <option value="original">MP4 (Original)</option>
+          <option value="1080p">MP4 (1080p)</option>
+          <option value="720p" selected>MP4 (720p)</option>
+          <option value="480p">MP4 (480p)</option>
+        </select>
+        <button id="convertBtn" disabled>Convert</button>
+      </div>
+
+      <div style="margin-top:14px" class="bar"><div id="bar"></div></div>
+      <div id="status" class="muted" style="margin-top:10px">Select a file.</div>
+
+      <div style="margin-top:14px" id="downloadWrap" hidden>
+        <a id="downloadBtn" class="btn" href="#" target="_blank" rel="noopener">Download</a>
+      </div>
+    </div>
+
+    <p class="muted" style="margin-top:14px">Private tool. Max upload: 1GB.</p>
+  </div>
+
+<script>
+const fileEl = document.getElementById('file');
+const presetEl = document.getElementById('preset');
+const btn = document.getElementById('convertBtn');
+const statusEl = document.getElementById('status');
+const bar = document.getElementById('bar');
+const dlWrap = document.getElementById('downloadWrap');
+const dlBtn = document.getElementById('downloadBtn');
+
+let currentJobId = null;
+
+function setStatus(t){ statusEl.textContent = t; }
+function setProgress(p){ bar.style.width = Math.max(0, Math.min(100, p)) + '%'; }
+
+fileEl.addEventListener('change', () => {
+  const f = fileEl.files && fileEl.files[0];
+  btn.disabled = !f;
+  dlWrap.hidden = true;
+  setProgress(0);
+  setStatus(f ? `Ready: ${f.name} (${Math.round(f.size/1024/1024)} MB)` : 'Select a file.');
+});
+
+async function presignUpload(f){
+  const res = await fetch('/api/uploads/presign', {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ filename: f.name, size: f.size })
+  });
+  const data = await res.json();
+  if (!data.ok) throw new Error(data.error || 'presign failed');
+  return data;
+}
+
+async function putFile(url, f){
+  const res = await fetch(url, { method:'PUT', body: f, headers: { 'Content-Type': 'application/octet-stream' } });
+  if (!res.ok) throw new Error('upload failed');
+}
+
+async function createJob(input_key, input_size_bytes, preset){
+  const res = await fetch('/api/jobs', {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ input_key, input_size_bytes, preset })
+  });
+  const data = await res.json();
+  if (!data.ok) throw new Error(data.error || 'job create failed');
+  return data.id;
+}
+
+async function pollJob(id){
+  const res = await fetch(`/api/jobs/${id}`);
+  return await res.json();
+}
+
+btn.addEventListener('click', async () => {
+  const f = fileEl.files && fileEl.files[0];
+  if (!f) return;
+  btn.disabled = true;
+  dlWrap.hidden = true;
+  setProgress(2);
+
+  try{
+    setStatus('Requesting upload URL…');
+    const p = await presignUpload(f);
+
+    setStatus('Uploading…');
+    await putFile(p.put_url, f);
+
+    setStatus('Queued…');
+    const jobId = await createJob(p.key, f.size, presetEl.value);
+    currentJobId = jobId;
+
+    setStatus('Processing…');
+    let done = false;
+    while(!done){
+      await new Promise(r => setTimeout(r, 1200));
+      const data = await pollJob(jobId);
+      if (!data.ok) throw new Error(data.error || 'poll failed');
+      const j = data.job;
+      setProgress(j.progress || 0);
+
+      if (j.status === 'done'){
+        setStatus('Done.');
+        if (j.download_url){
+          dlBtn.href = j.download_url;
+          dlWrap.hidden = false;
+        }
+        done = true;
+      } else if (j.status === 'failed'){
+        throw new Error(j.error || 'conversion failed');
+      } else {
+        setStatus(`Status: ${j.status} (${j.progress || 0}%)`);
+      }
+    }
+  }catch(e){
+    setStatus('Error: ' + (e.message || e));
+  }finally{
+    btn.disabled = false;
+  }
+});
+</script>
+</body>
+</html>
