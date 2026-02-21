@@ -129,14 +129,8 @@ def input_from_url(request):
     if not url or not _is_http_url(url):
         return JsonResponse({"ok": False, "error": "Invalid URL"}, status=400)
 
-    if _is_youtube_url(url):
-        return JsonResponse(
-            {
-                "ok": False,
-                "error": "YouTube links are preview-only. Please provide a direct file URL (e.g., signed S3/R2/Dropbox direct link) or upload the source file.",
-            },
-            status=400,
-        )
+    # Note: we accept any http(s) URL, but this endpoint only works for *direct file* URLs.
+    # If you paste a webpage (YouTube/Rumble/etc), it will usually return text/html and we will reject it.
 
     # Download with a hard cap (1GB default)
     cap = _max_upload_bytes()
@@ -150,6 +144,17 @@ def input_from_url(request):
     size = 0
     try:
         with urllib.request.urlopen(req, timeout=30) as resp:
+            ct = (resp.headers.get("Content-Type") or "").lower()
+            if ct.startswith("text/html"):
+                return JsonResponse(
+                    {
+                        "ok": False,
+                        "error": "That URL looks like a webpage, not a direct media file. Please paste a direct file URL (ending in .mp4/.mov/etc) or upload the source file.",
+                        "content_type": ct,
+                    },
+                    status=400,
+                )
+
             # Optional early reject if content-length is present
             cl = resp.headers.get("Content-Length")
             if cl:
