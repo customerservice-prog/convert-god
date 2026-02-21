@@ -18,6 +18,22 @@ def healthz(request):
     return JsonResponse({"ok": True})
 
 
+def contact(request):
+    return render(request, "contact.html", {"title": "Contact"})
+
+
+def copyright_claims(request):
+    return render(request, "copyright_claims.html", {"title": "Copyright Claims"})
+
+
+def privacy_policy(request):
+    return render(request, "privacy_policy.html", {"title": "Privacy Policy"})
+
+
+def terms_of_use(request):
+    return render(request, "terms_of_use.html", {"title": "Terms of Use"})
+
+
 def index(request):
     return render(request, "index.html", {})
 

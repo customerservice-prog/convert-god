@@ -10,6 +10,10 @@ urlpatterns = [
 
     # UI
     path("", views.index, name="index"),
+    path("contact", views.contact, name="contact"),
+    path("copyright-claims", views.copyright_claims, name="copyright_claims"),
+    path("privacy-policy", views.privacy_policy, name="privacy_policy"),
+    path("terms-of-use", views.terms_of_use, name="terms_of_use"),
 
     # API
     path("api/uploads", views.upload_file, name="upload_file"),

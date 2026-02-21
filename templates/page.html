@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+
+{% block title %}{{ title }} — Convert God{% endblock %}
+
+{% block content %}
+  <div class="card">
+    <h1>{{ title }}</h1>
+    <div class="muted" style="max-width: 78ch; line-height:1.45">
+      {% block body %}{% endblock %}
+    </div>
+  </div>
+{% endblock %}

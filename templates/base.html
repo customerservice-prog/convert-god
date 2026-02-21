@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>{% block title %}Convert God{% endblock %}</title>
+  <style>
+    :root{
+      --bg:#0b0b0c;
+      --panel: rgba(255,255,255,.06);
+      --border: rgba(255,255,255,.10);
+      --text:#ffffff;
+      --muted: rgba(255,255,255,.78);
+      --brand:#00aaff;
+      --brand2:#00ff99;
+    }
+    html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Arial;}
+    a{color:inherit}
+    .container{max-width:980px;margin:0 auto;padding:0 16px;}
+
+    /* header */
+    .topbar{position:sticky;top:0;z-index:20;background:rgba(11,11,12,.82);backdrop-filter: blur(14px);border-bottom:1px solid var(--border);}
+    .topbar-inner{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:14px 0;}
+    .brand{display:flex;align-items:center;gap:10px;text-decoration:none;}
+    .logo{
+      width:34px;height:34px;border-radius:10px;
+      background: radial-gradient(circle at 25% 25%, var(--brand), transparent 55%),
+                  radial-gradient(circle at 70% 70%, var(--brand2), transparent 55%),
+                  rgba(255,255,255,.08);
+      border:1px solid rgba(255,255,255,.14);
+      box-shadow: 0 18px 60px rgba(0,0,0,.55);
+      flex:0 0 auto;
+    }
+    .brand-name{font-weight:1000;letter-spacing:.02em;font-size:16px;line-height:1;}
+    .brand-sub{font-size:12px;opacity:.8;font-weight:800;margin-top:2px;}
+
+    .nav{display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end;}
+    .nav a{font-weight:900;opacity:.92;text-decoration:none;padding:8px 10px;border-radius:12px;border:1px solid rgba(255,255,255,.10);background:rgba(255,255,255,.04);}
+    .nav a:hover{opacity:1;border-color:rgba(0,170,255,.35);}
+
+    /* page */
+    .wrap{padding:26px 0 44px;}
+    .card{background:var(--panel);border:1px solid var(--border);border-radius:18px;padding:18px;box-shadow: 0 24px 80px rgba(0,0,0,.45);}
+    .muted{color:var(--muted);font-weight:750;}
+    h1{margin:0 0 10px;font-size:34px;letter-spacing:.01em;}
+    h2{margin:18px 0 10px;font-size:18px;letter-spacing:.02em;}
+    ul{margin:8px 0 0 18px;}
+
+    /* footer */
+    .footer{border-top:1px solid var(--border);padding:18px 0 28px;color:var(--muted);}
+    .footer a{color:var(--muted);text-decoration:none;font-weight:850;}
+    .footer a:hover{color:#fff;}
+    .footer-links{display:flex;gap:14px;flex-wrap:wrap;}
+  </style>
+  {% block head %}{% endblock %}
+</head>
+<body>
+  <header class="topbar">
+    <div class="container">
+      <div class="topbar-inner">
+        <a class="brand" href="/">
+          <div class="logo" aria-hidden="true"></div>
+          <div>
+            <div class="brand-name">Convert God</div>
+            <div class="brand-sub">Private file converter</div>
+          </div>
+        </a>
+        <nav class="nav" aria-label="Site">
+          <a href="/contact">Contact</a>
+          <a href="/copyright-claims">Copyright</a>
+          <a href="/privacy-policy">Privacy</a>
+          <a href="/terms-of-use">Terms</a>
+        </nav>
+      </div>
+    </div>
+  </header>
+
+  <main class="container wrap">
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="footer">
+    <div class="container">
+      <div class="footer-links">
+        <a href="/contact">Contact</a>
+        <a href="/copyright-claims">Copyright Claims</a>
+        <a href="/privacy-policy">Privacy Policy</a>
+        <a href="/terms-of-use">Terms of Use</a>
+      </div>
+      <div style="margin-top:10px">© {% now "Y" %} Convert God. All rights reserved.</div>
+    </div>
+  </footer>
+</body>
+</html>
