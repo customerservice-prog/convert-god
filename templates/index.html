@@ -2,10 +2,15 @@
 
 {% block content %}
   <div class="card" style="margin-bottom:14px">
-    <h1 style="margin-bottom:8px">Convert God</h1>
-    <div class="muted" style="max-width: 80ch; line-height:1.45">
-      <p style="margin:0 0 10px">Convert God is a private file converter. Max upload: <b>1GB</b>.</p>
-      <p style="margin:0"><b>How to use:</b> 1) Choose a file 2) Pick an output format 3) Click Convert 4) Download when ready.</p>
+    <div style="display:flex; align-items:center; gap:14px; flex-wrap:wrap">
+      <img src="{% static 'app/convert-god.jpg' %}" alt="Convert God" style="width:140px; height:140px; object-fit:contain; border-radius:18px; border:1px solid rgba(255,255,255,.14); background:rgba(255,255,255,.06);" />
+      <div style="min-width:0">
+        <h1 style="margin:0 0 8px">Convert God</h1>
+        <div class="muted" style="max-width: 80ch; line-height:1.45">
+          <p style="margin:0 0 10px">Convert God is a private file converter. Max upload: <b>1GB</b>.</p>
+          <p style="margin:0"><b>How to use:</b> 1) Choose a file 2) Pick an output format 3) Click Convert 4) Download when ready.</p>
+        </div>
+      </div>
     </div>
   </div>
 
