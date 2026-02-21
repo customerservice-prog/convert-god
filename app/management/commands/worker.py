@@ -114,6 +114,7 @@ class Command(BaseCommand):
 
         # ffmpeg progress
         # Allow URL pointer files: first line is URL:<media_url>
+        # ffmpeg can ingest http(s) MP4, HLS (.m3u8), and some DASH (.mpd) depending on build.
         ffmpeg_input = in_path
         try:
             if os.path.isfile(in_path) and os.path.getsize(in_path) < 4096:

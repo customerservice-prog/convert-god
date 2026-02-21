@@ -16,6 +16,7 @@ from django.views.decorators.csrf import csrf_exempt
 from .models import Job
 from .disk_storage import ensure_dirs, input_path, output_path, sign_download, verify_download
 from .extractors import extract_best_effort, extract_src_from_embed
+from .browser_sniffer import sniff_media_url
 
 
 def _is_youtube_url(u: str) -> bool:
@@ -173,18 +174,32 @@ def input_from_url(request):
 
                 ex = extract_best_effort(html, url)
                 if not ex.get("ok"):
-                    return JsonResponse(
-                        {
-                            "ok": False,
-                            "error": "This URL appears to be a webpage. Convert God can only convert direct media URLs (MP4/MOV/etc).\n\nBest-effort page scan did not find an embedded MP4/HLS link.\n\nTip: look for a direct file URL (often ends in .mp4) or download the source file and upload it here.",
-                            "error_code": "webpage_no_media_found",
-                            "content_type": ct,
-                        },
-                        status=400,
-                    )
+                    # Stage 3: headless browser sniff (optional)
+                    try:
+                        if os.environ.get("ENABLE_BROWSER_MODE", "1") == "1":
+                            sn = sniff_media_url(url)
+                        else:
+                            sn = None
+                    except Exception:
+                        sn = None
 
-                media_url = str(ex.get("media_url") or "").strip()
-                kind = str(ex.get("kind") or "").strip()
+                    if sn and getattr(sn, "ok", False) and getattr(sn, "media_url", None):
+                        media_url = str(sn.media_url).strip()
+                        kind = str(sn.kind or "").strip()
+                    else:
+                        return JsonResponse(
+                            {
+                                "ok": False,
+                                "error": "This URL appears to be a webpage. Convert God tried: (1) HTML scan and (2) browser network sniff, but still could not find a direct MP4/HLS/DASH stream URL.\n\nCommon reasons: the site requires login/cookies, is geo-blocked, uses DRM, or hides streams behind JS APIs.\n\nNext step: provide a direct media file URL (often ends in .mp4/.m3u8/.mpd) or upload the source file.",
+                                "error_code": "webpage_no_media_found",
+                                "content_type": ct,
+                                "details": {"html_reason": ex.get("reason"), "sniff_reason": getattr(sn, "reason", None) if sn else None},
+                            },
+                            status=400,
+                        )
+                else:
+                    media_url = str(ex.get("media_url") or "").strip()
+                    kind = str(ex.get("kind") or "").strip()
                 if not media_url:
                     return JsonResponse({"ok": False, "error": "Extraction failed"}, status=400)
 

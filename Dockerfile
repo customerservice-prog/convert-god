@@ -1,5 +1,6 @@
 # Convert God - Docker image for Render (web + worker)
-FROM python:3.13-slim
+# Playwright base includes Chromium + dependencies for headless browser mode.
+FROM mcr.microsoft.com/playwright/python:v1.50.0-jammy
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
