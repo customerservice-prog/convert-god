@@ -15,6 +15,7 @@ from django.views.decorators.csrf import csrf_exempt
 
 from .models import Job
 from .disk_storage import ensure_dirs, input_path, output_path, sign_download, verify_download
+from .extractors import extract_best_effort
 
 
 def _is_youtube_url(u: str) -> bool:
@@ -146,14 +147,39 @@ def input_from_url(request):
         with urllib.request.urlopen(req, timeout=30) as resp:
             ct = (resp.headers.get("Content-Type") or "").lower()
             if ct.startswith("text/html"):
-                return JsonResponse(
-                    {
-                        "ok": False,
-                        "error": "That URL looks like a webpage, not a direct media file. Please paste a direct file URL (ending in .mp4/.mov/etc) or upload the source file.",
-                        "content_type": ct,
-                    },
-                    status=400,
-                )
+                # Best-effort webpage extraction: try to find a direct MP4/M3U8 in the HTML.
+                try:
+                    html = resp.read(cap if cap < (3 * 1024 * 1024) else (3 * 1024 * 1024)).decode("utf-8", errors="ignore")
+                except Exception:
+                    html = ""
+
+                ex = extract_best_effort(html, url)
+                if not ex.get("ok"):
+                    return JsonResponse(
+                        {
+                            "ok": False,
+                            "error": "This URL appears to be a webpage. Convert God can only convert direct media URLs (MP4/MOV/etc).\n\nBest-effort page scan did not find an embedded MP4/HLS link.\n\nTip: look for a direct file URL (often ends in .mp4) or download the source file and upload it here.",
+                            "error_code": "webpage_no_media_found",
+                            "content_type": ct,
+                        },
+                        status=400,
+                    )
+
+                media_url = str(ex.get("media_url") or "").strip()
+                kind = str(ex.get("kind") or "").strip()
+                if not media_url:
+                    return JsonResponse({"ok": False, "error": "Extraction failed"}, status=400)
+
+                # Write a small URL pointer file. Worker will let ffmpeg ingest the URL directly.
+                url_key = f"inputs/{uuid.uuid4().hex}.url"
+                url_dst = input_path(url_key)
+                Path(os.path.dirname(url_dst)).mkdir(parents=True, exist_ok=True)
+                with open(url_dst, "w", encoding="utf-8") as f:
+                    f.write(f"URL:{media_url}\n")
+                    f.write(f"KIND:{kind}\n")
+                    f.write(f"SRC:{url}\n")
+
+                return JsonResponse({"ok": True, "key": url_key, "size": 0, "note": "extracted_media_url"})
 
             # Optional early reject if content-length is present
             cl = resp.headers.get("Content-Length")

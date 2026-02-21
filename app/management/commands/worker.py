@@ -113,11 +113,22 @@ class Command(BaseCommand):
         Path(os.path.dirname(out_path)).mkdir(parents=True, exist_ok=True)
 
         # ffmpeg progress
+        # Allow URL pointer files: first line is URL:<media_url>
+        ffmpeg_input = in_path
+        try:
+            if os.path.isfile(in_path) and os.path.getsize(in_path) < 4096:
+                with open(in_path, "r", encoding="utf-8", errors="ignore") as f:
+                    head = (f.readline() or "").strip()
+                if head.startswith("URL:"):
+                    ffmpeg_input = head.split(":", 1)[1].strip()
+        except Exception:
+            ffmpeg_input = in_path
+
         cmd = [
             ffmpeg_bin(),
             "-y",
             "-i",
-            in_path,
+            ffmpeg_input,
             "-progress",
             "pipe:1",
             "-nostats",
