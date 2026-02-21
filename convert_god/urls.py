@@ -1,5 +1,6 @@
 from django.contrib import admin
 from django.urls import path
+from django.views.generic import RedirectView
 from app import views
 
 urlpatterns = [
@@ -7,6 +8,9 @@ urlpatterns = [
 
     # Healthcheck (no auth)
     path("healthz", views.healthz, name="healthz"),
+
+    # Favicon
+    path("favicon.ico", RedirectView.as_view(url="/static/app/favicon.ico", permanent=True)),
 
     # UI
     path("", views.index, name="index"),

@@ -7,8 +7,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 # ffmpeg for transcoding
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends ffmpeg ca-certificates \
+  && apt-get install -y --no-install-recommends ffmpeg ca-certificates tzdata \
   && rm -rf /var/lib/apt/lists/*
+
+ENV TZ=UTC
 
 WORKDIR /app
 
