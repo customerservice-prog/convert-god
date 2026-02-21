@@ -16,7 +16,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . /app
 
-# Collectstatic during build is handled by Render build command; keep image generic.
+RUN chmod +x /app/entrypoint.sh
 
-# Default command (Render overrides per service)
-CMD ["gunicorn", "convert_god.wsgi:application", "--bind", "0.0.0.0:10000"]
+# One image: choose role via SERVICE_ROLE=web|worker
+ENTRYPOINT ["/app/entrypoint.sh"]
